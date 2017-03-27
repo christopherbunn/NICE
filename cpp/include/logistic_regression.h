@@ -77,10 +77,8 @@ class LogisticRegression {
     
     T get_cost_function_derivative(int j){
       T error_sum = 0;
-      std::cout << "Checkpoint C" << std::endl;
       for (int i = 0; i < training_x.rows(); i++){
       	Vector<T> curr_x = training_x;
-      	std::cout << "Checkpoint D" << std::endl;
       	T curr_j = curr_x[j];
       	T hypothesis = get_hypothesis(curr_x);
       	error_sum += (hypothesis - training_y[i]) * curr_j;
@@ -92,7 +90,6 @@ class LogisticRegression {
     
     void get_gradient(){
       Vector<T> new_theta_params;
-      std::cout << "Checkpoint B" << std::endl;
       for (int j = 0; j < theta_params.size(); j++){
         T CDF = get_cost_function_derivative(j);
         new_theta_params[j] = theta_params[j] - CDF;
@@ -102,7 +99,6 @@ class LogisticRegression {
     
   public:
     void logistic_regression(Matrix<T> training_x, Vector<T>training_y, Vector<T>theta_params){
-      std::cout << "Checkpoint A" << std::endl;
       for (int i = 0; i < number_iterations; i++){
         get_gradient();
         if (i % 100 == 0){
