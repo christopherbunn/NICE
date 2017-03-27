@@ -33,9 +33,8 @@ class LogisticRegressionTest : public ::testing::Test {
  public:
   Nice::LogisticRegression<T> *lr;
   Nice::Matrix<T> x;
-  Nice::Matrix<T> predict_input;
   Nice::Vector<T> y;
-  Nice::Vector<T> predicted;
+  Nice::Vector<T> theta_output;
   void Instantiate() {
 	lr = new Nice::LogisticRegression<T>();
   }
@@ -49,6 +48,7 @@ TYPED_TEST_CASE(LogisticRegressionTest, MyTypes);
 
 
 TYPED_TEST(LogisticRegressionTest, Test) {
+std::cout << "Checkpoint A" << std::endl;
   this->x.resize(10, 2);
     this->x << 2, .5,
                2, 0,
@@ -61,14 +61,16 @@ TYPED_TEST(LogisticRegressionTest, Test) {
                3, 5,
                6, 3.5;
   this->y.resize(10);
+  std::cout << "Checkpoint B" << std::endl;
   this->y << 0, 0, 0, 0, 0, 1, 1, 1, 1, 1;
-  logistic_regression(this->x,this->y,[0.0,0.0,0.0]);
-  // this->Instantiate();
+  this->theta_output << 0.0,0.0,0.0;
+  this->Instantiate();
+  this->lr->logistic_regression(this->x,this->y,this->theta_output);
   // this->lr->SetLambda(.0001);
   // this->lr->Fit(this->x, this->y);
   // this->predict_input.resize(2,2);
   // this->predict_input << 8, 3,
-                         2, 11;
+                         //2, 11;
   // this->Predict();
   // std::cout << "predicted output:" << this->predicted << std::endl;
   ASSERT_TRUE( 0 == 0);
