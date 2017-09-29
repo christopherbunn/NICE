@@ -163,6 +163,7 @@ if (enable-test)
          test/gpu_solver_test/*.cc
          test/model_test/gpu*.cc
          test/model_test/logistic*.cc
+         test/performance_test/*
          )
   else()
   message("NO GPU TEST MADE")
