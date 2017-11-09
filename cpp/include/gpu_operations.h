@@ -34,7 +34,6 @@
 #include <cusolverDn.h>
 #include <unistd.h>
 #include <stdexcept>
-#include <chrono>
 
 #include <iostream>
 
@@ -42,8 +41,6 @@
 #include "include/vector.h"
 #include "include/gpu_util.h"
 #include "include/gpu_svd_solver.h"
-
-using namespace std::chrono;
 
 namespace Nice {
 
@@ -124,7 +121,7 @@ class GpuOperations {
   ///
   /// \return
   /// This function returns a Matrix of type T
-  /**static Matrix<T> Multiply(const Matrix<T> &a, const Matrix<T> &b) {
+  static Matrix<T> Multiply(const Matrix<T> &a, const Matrix<T> &b) {
     if (a.cols() == b.rows()) {  // Check if matricies k vals are equal
       // Allocate and transfer memories
       int m = a.rows();
@@ -163,7 +160,7 @@ class GpuOperations {
                 << std::endl;
       exit(1);
     }
-  }**/
+  }
 
   /// This function multiplies an input Matrix and a Vector
   ///
