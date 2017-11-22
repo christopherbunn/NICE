@@ -158,6 +158,7 @@ if (enable-test)
          test/cpu_solver_test/*.cc
          test/gpu_operations_test/*.cc
          test/gpu_solver_test/*.cc
+         test/performance_test/*.cc
          test/model_test/*.cc
          )
   else()

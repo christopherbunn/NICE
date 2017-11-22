@@ -29,6 +29,8 @@
 #include "include/gpu_logistic_regression.h"
 #include "include/logistic_regression.h"
 #include "include/matrix.h"
+#include <chrono>
+using namespace std::chrono;
 
 template<typename T>
 class Benchmark: public ::testing::Test {

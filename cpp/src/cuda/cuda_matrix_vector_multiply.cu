@@ -20,7 +20,7 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 #include "include/cuda_matrix_vector_multiply.h"
-#define BLOCK_SIZE 7
+#define BLOCK_SIZE 32
 namespace Nice {
 
   template <typename T>
