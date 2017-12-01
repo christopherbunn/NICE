@@ -30,6 +30,8 @@
 #include "include/cuda_matrix_vector_multiply.h"
 #include "include/cuda_matrix_vector_multiply_shared_memory.h"
 #include "include/gpu_operations.h"
+#include "include/gpu_util.h"
+
 
 using namespace std::chrono;
 
@@ -392,11 +394,13 @@ namespace Nice {
 
         CUDA_CALL(cudaMemcpy(&h_result(0), d_result, xin.rows() * sizeof(T),
           cudaMemcpyDeviceToHost));**/
-        Nice::CudaMatrixVectorMultiply<T> global_op;
-        h_result = xin * bottom_theta;
+        Nice::CudaSharedMVMultiply<T> global_op(1024);
+        h_result = global_op.Multiply(xin, bottom_theta);
+        // h_result = xin * bottom_theta;
         h_result = h_result.array() + theta(0);
         gradient.bottomRows(gradient.rows() - 1) =
-          xin.transpose() * (h(h_result) - y);
+          global_op.Multiply(xin.transpose(), (h(h_result) - y));
+          // xin.transpose() * (h(h_result) - y);
         gradient(0) = theta.sum();
         theta = theta - ((alpha/ y.size()) * gradient);
 
@@ -428,11 +432,6 @@ namespace Nice {
         yhat = yhat.array() + theta(0);
         h_predictions = h(yhat);
         h_predictions = h_predictions.unaryExpr(std::ptr_fun<T,T>(std::round));
-        if (((h_predictions - y).squaredNorm() / predict_inputs.rows()) <= .05){
-          std::cout << "Ended at i = " << i << "\n";
-          std::cout << ((h_predictions - y).squaredNorm() / predict_inputs.rows()) << std::endl;
-          i = iterations;
-        }
       }
 
       CUDA_CALL(cudaDeviceSynchronize());

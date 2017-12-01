@@ -69,7 +69,7 @@ class Benchmark: public ::testing::Test {
 
   void thetaCompare(Nice::Vector<T> cpu, Nice::Vector<T> gpu){
     for (int i = 0; i < cpu.size(); i++){
-      if (i > 30 && i < 50){
+      if (i >50 && i < 70){
         std::cout << "CPU: " << cpu(i) << " GPU: " << gpu(i) << "\n";
       }
       EXPECT_NEAR(cpu(i), gpu(i), 0.001);
@@ -83,13 +83,16 @@ TYPED_TEST_CASE(Benchmark, MyTypes);
 
 TYPED_TEST(Benchmark, Heart) {
   // Setup for the Fit function
-  this->iterations = 25000;
+  this->iterations = 10000;
   this->alpha = 0.001;
 
   // Populates matrix with values from txt files
   this->training_x = this->filler("heart_x.txt", ",");
   this->training_y = this->filler("heart_y.txt", " ");
   this->predict_x = this->filler("heart_predict.txt", ",");
+
+  std::cout << this->training_y.rows() << std::endl;
+  std::cout << this->training_y.cols() << std::endl;
 
   // CPU Fit with timing functionality around it
   high_resolution_clock::time_point t1 = high_resolution_clock::now();
@@ -138,8 +141,8 @@ TYPED_TEST(Benchmark, Heart) {
 
 TYPED_TEST(Benchmark, MNIST) {
   // Setup for the Fit function
-  this->iterations = 30;
-  this->alpha = 0.01;
+  this->iterations = 100;
+  this->alpha = 0.001;
 
   // Populates matrix with values from txt files
   this->training_x = this->filler("mnist_x.txt", ",");
@@ -154,44 +157,41 @@ TYPED_TEST(Benchmark, MNIST) {
   auto duration = duration_cast<microseconds>( t2 - t1 ).count();
   std::cout << "CPU Logistic Regression - Fit: " << (long)duration << std::endl;
 
-  // CPU Predict with timing functionality around it
+  // GPU Fit with timing functionality around it
+  t1 = high_resolution_clock::now();
+  Nice::Vector<TypeParam> gpu = this->gpuModel.GpuFitMV(this->training_x, this->training_y, this->predict_x,
+    this->iterations,this->alpha);
+  t2 = high_resolution_clock::now();
+  duration = duration_cast<microseconds>( t2 - t1 ).count();
+  std::cout << "GPU Logistic Regression - Fit: " << (long)duration << std::endl;
+
+  // CPU Predict function with timing
   t1 = high_resolution_clock::now();
   this->predictions = this->model.Predict(this->predict_x);
   t2 = high_resolution_clock::now();
   duration = duration_cast<microseconds>( t2 - t1 ).count();
   std::cout << "CPU Logistic Regression - Predict: " << (long)duration << std::endl;
 
-  // GPU Fit with timing functionality around it
-  t1 = high_resolution_clock::now();
-  Nice::Vector<TypeParam> gpu = this->gpuModel.GpuFitMV(this->training_x, this->training_y, this->predict_x,
-    this->iterations, this->alpha);
-  t2 = high_resolution_clock::now();
-  duration = duration_cast<microseconds>( t2 - t1 ).count();
-  std::cout << "GPU Logistic Regression - Fit: " << (long)duration << std::endl;
-
-  // GPU Predict with timing functionality around it
+  // GPU Predict function with timing
   t1 = high_resolution_clock::now();
   this->gpuPredictions = this->gpuModel.GpuPredict(this->predict_x);
   t2 = high_resolution_clock::now();
   duration = duration_cast<microseconds>( t2 - t1 ).count();
   std::cout << "GPU Logistic Regression - Predict: " << (long)duration << std::endl;
 
-  // Checks prediction results against ground truth
+  // Compares CPU and GPU values against ground truth
   this->expected_vals = this->filler("mnist_expected.txt", " ");
-  // this->resultsCheck(this->gpuPredictions, "GPU");
-  // this->resultsCheck(this->predictions, "CPU");
+  this->resultsCheck(this->gpuPredictions, "GPU");
+  this->resultsCheck(this->predictions, "CPU");
 
-  // Compares the theta values generated from CPU and GPU
+  // Compares the CPU and GPU theta value with each other
   this->thetaCompare(this->model.getTheta(), this->gpuModel.getTheta());
-
-  // Prints out the number of errors
-  std::cout << "Errors: " << ((cpu - gpu).squaredNorm()) << "\n";
+  std::cout << "Number of differences between CPU and GPU Thetas : " << ((cpu - gpu).squaredNorm()) << "\n";
 
   // Prints out the first 20 values of predict vectors
   for (int i = 0; i < 20; i++){
     std::cout << this->gpuPredictions(i) << " :: " << this->predictions(i) << std::endl;
   }
-  ASSERT_TRUE(true);
 }
 
 // Below are tests for comparing theta function
