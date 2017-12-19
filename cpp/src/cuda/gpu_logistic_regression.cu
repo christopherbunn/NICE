@@ -400,7 +400,6 @@ namespace Nice {
         h_result = h_result.array() + theta(0);
         gradient.bottomRows(gradient.rows() - 1) =
           global_op.Multiply(xin.transpose(), (h(h_result) - y));
-          // xin.transpose() * (h(h_result) - y);
         gradient(0) = theta.sum();
         theta = theta - ((alpha/ y.size()) * gradient);
 
@@ -424,16 +423,16 @@ namespace Nice {
         CUDA_CALL(cudaMalloc(&d_theta, theta.size() * sizeof(T)));
         CUDA_CALL(cudaMemcpy(d_theta, &theta(0), theta.size() * sizeof(T),
           cudaMemcpyHostToDevice));**/
-
-        Vector<T> yhat;
-        Matrix<T> product;
-        product = predict_inputs * theta.bottomRows(theta.rows()-1);
-        yhat = product.rowwise().sum();
-        yhat = yhat.array() + theta(0);
-        h_predictions = h(yhat);
-        h_predictions = h_predictions.unaryExpr(std::ptr_fun<T,T>(std::round));
       }
 
+      Vector<T> yhat;
+      Matrix<T> product;
+      product = predict_inputs * theta.bottomRows(theta.rows()-1);
+      yhat = product.rowwise().sum();
+      yhat = yhat.array() + theta(0);
+      h_predictions = h(yhat);
+      h_predictions = h_predictions.unaryExpr(std::ptr_fun<T,T>(std::round));
+      
       CUDA_CALL(cudaDeviceSynchronize());
 
       CUDA_CALL(cudaFree(d_xin));
