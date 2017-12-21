@@ -121,12 +121,9 @@ class LogisticRegression {
         xin.transpose() * (h(x_theta_mult) - y);
       gradient(0) = theta.sum();
       theta = theta - ((alpha/ y.size()) * gradient);
-      predictions = Predict(inputs);
-      predictions = predictions.unaryExpr(std::ptr_fun<T,T>(std::round));
-      // if (((predictions - y).squaredNorm() / predictions.size()) <= .05){
-      //   i = iterations;
-      // }
     }
+    predictions = Predict(inputs);
+    predictions = predictions.unaryExpr(std::ptr_fun<T,T>(std::round));
     return predictions;
   }
 };
