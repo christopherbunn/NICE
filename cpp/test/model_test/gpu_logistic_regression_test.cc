@@ -78,7 +78,7 @@ class GpuLogisticRegressionTest: public ::testing::Test {
   }
 };
 
-typedef ::testing::Types<double> MyTypes;
+typedef ::testing::Types<float, double> MyTypes;
 TYPED_TEST_CASE(GpuLogisticRegressionTest, MyTypes);
 
 TYPED_TEST(GpuLogisticRegressionTest, Basic) {
@@ -166,10 +166,6 @@ TYPED_TEST(GpuLogisticRegressionTest, Basic) {
       << std::endl;
   }
 }
-
-typedef ::testing::Types<float, double> MyTypes;
-TYPED_TEST_CASE(Benchmark, MyTypes);
-
 
 TYPED_TEST(GpuLogisticRegressionTest, Heart) {
   // Setup for the Fit function
