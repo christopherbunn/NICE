@@ -21,21 +21,39 @@
 // SOFTWARE.
 #ifdef CUDA_AND_GPU
 #include "include/gpu_logistic_regression.h"
-#include "src/cuda/cuda_matrix_vector_multiply_shared_memory.cu"
 #include "include/util.h"
 #include "include/matrix.h"
 #include "include/vector.h"
 #include <cmath>
 #include <chrono>
-#include "include/cuda_matrix_vector_multiply.h"
-#include "include/cuda_matrix_vector_multiply_shared_memory.h"
 #include "include/gpu_operations.h"
 #include "include/gpu_util.h"
-
 
 using namespace std::chrono;
 
 namespace Nice {
+  // Used to be able to use templates with shared memory
+  template <>
+  struct SharedMemory <float>
+  {
+      __device__ float *getPointer()
+      {
+          extern __shared__ float s_float[];
+          return s_float;
+      }
+  };
+
+  // Used to be able to use templates with shared memory
+  template <>
+  struct SharedMemory <double>
+  {
+      __device__ double *getPointer()
+      {
+          extern __shared__ double s_double[];
+          return s_double;
+      }
+  };
+
   /// Calculates the hypothesis of a given input Vector
   ///
   /// \param input
@@ -79,29 +97,11 @@ namespace Nice {
   }
 
   template <typename T>
-  __global__ void preMultiply(T * d_result, T *d_y, T *d_temp, T theta_0){
+  __global__ void preMultiply(T * d_result, T *d_y, T *d_temp, T *d_theta){
     int col = blockIdx.x * blockDim.x + threadIdx.x;
-    T value = d_result[col] + theta_0;
+    T value = d_result[col] + d_theta[0];
     d_temp[col] = h(value) - d_y[col];
   }
-
-  template <typename T>
-  __global__ void calculateTheta(T *d_gradient, T *d_theta, T factor, int theta_size){
-    int col = blockIdx.x * blockDim.x + threadIdx.x;
-    __shared__ T theta_0;
-    theta_0 = 0;
-    if (col < theta_size){
-      atomicAdd(&theta_0, d_theta[col]);
-      if (col == 0){
-        d_theta[0] = d_theta[0] - (factor * theta_0);
-      }
-      else{
-        d_theta[col] = d_theta[col] - (factor * d_gradient[col - 1]);
-      }
-    }
-
-  }
-
 
   /// Given a set of features and parameters creates a vector of target outputs
   ///
@@ -117,8 +117,8 @@ namespace Nice {
   Vector<T> GpuLogisticRegression<T>::GpuPredict(const Matrix<T> &inputs) {
     int m = inputs.rows();
     int k = inputs.cols();
-    T theta_0 = theta[0];
-    Vector<T> new_theta = (theta.bottomRows(theta.rows()-1));
+    T theta_0 = theta_[0];
+    Vector<T> new_theta = (theta_.bottomRows(theta_.rows()-1));
     const T * h_theta = &new_theta(0);
     const T * h_inputs = &inputs(0);
     Vector<T> h_predictions(m);
@@ -141,10 +141,10 @@ namespace Nice {
     CUDA_CALL(cudaMemset(d_predictions, 0, m * sizeof(T)));
 
     // Launch kernel here
-    dim3 dimBlock(BLOCK_SIZE * BLOCK_SIZE);
-    dim3 dimGrid(std::ceil((T) m / (BLOCK_SIZE * BLOCK_SIZE)));
+    dim3 dimBlock(block_size_ * block_size_);
+    dim3 dimGrid(std::ceil((T) m / (block_size_ * block_size_)));
 
-    PredictKernel<<<dimGrid, dimBlock, BLOCK_SIZE * BLOCK_SIZE * sizeof(T)>>>(d_theta, d_inputs,
+    PredictKernel<<<dimGrid, dimBlock, block_size_ * block_size_ * sizeof(T)>>>(d_theta, d_inputs,
       d_predictions, m, k, theta_0);
     CUDA_CALL(cudaDeviceSynchronize());
 
@@ -157,28 +157,81 @@ namespace Nice {
   }
 
   template <typename T>
-  __global__ void CudaMVKernel(T *d_a, T *d_x, T *d_y, int a_rows, int x_size) {
-    int row = blockIdx.y * blockDim.y + threadIdx.y;
-    int col = blockIdx.x * blockDim.x + threadIdx.x;
+  __global__ void CudaSharedKernel(T *d_a, T *d_x, T *d_y, int const a_rows, int const x_size) {
+    int blockRow = blockIdx.x;
+    int threadCol = threadIdx.x;
+    int block_size = blockDim.x * blockDim.y;
+    SharedMemory<T> shared;
+    T* xTile = shared.getPointer();
+
+    __syncthreads();
     T sum = 0.0f;
-    if (row >= x_size || col >= a_rows) return;
-    for (int k = 0; k < x_size; k++) {
-      sum += (d_a[col + (k * a_rows)] * d_x[k]);
+    for (int p = 0; p < std::ceil((T)x_size / (block_size)); p++){
+      for (int i = 0; i < block_size; i++){
+        T * aTile = &d_a[(p * block_size * a_rows) + (block_size * blockRow)];
+        xTile[threadCol] = d_x[block_size * p + threadCol];
+        int xGIndex = p * block_size + i;
+        int yGIndex = blockIdx.x * block_size + threadIdx.x;
+        if (xGIndex < x_size && yGIndex < a_rows){
+          sum += aTile[(a_rows *i) + threadCol] * xTile[i];
+        }
+      }
     }
-    d_y[row * a_rows + col] = sum;
+    __syncthreads();
+    d_y[threadCol + (blockRow * block_size)] = sum;
   }
 
+    template <typename T>
+    __global__ void CudaGlobalKernel(T *d_a, T *d_x, T *d_y, int a_rows, int x_size) {
+      int row = blockIdx.y * blockDim.y + threadIdx.y;
+      int col = blockIdx.x * blockDim.x + threadIdx.x;
+      T sum = 0.0f;
+      if (row >= x_size || col >= a_rows) return;
+      for (int k = 0; k < x_size; k++) {
+        sum += (d_a[col + (k * a_rows)] * d_x[k]);
+      }
+      d_y[row * a_rows + col] = sum;
+    }
 
   template <typename T>
-  Vector<T> GpuLogisticRegression<T>::GpuFitMV(const Matrix<T> &xin, const Vector<T> &y,
-    const Matrix<T> &predict_inputs, int iterations, T alpha){
+   __global__ void reduce(T *in_vector, T *sum, int n){
+    SharedMemory<T> shared;
+    T *shared_data = shared.getPointer();
+    int i = blockIdx.x * (blockDim.x * 2) + threadIdx.x;
+
+    T end_sum = (i < n) ? in_vector[i] : 0;
+
+    if (i + blockDim.x < n) end_sum += in_vector[i + blockDim.x];
+    shared_data[threadIdx.x] = end_sum;
+
+    for (int pos = blockDim.x / 2; pos>0; pos >>= 1)
+    {
+        if (threadIdx.x < pos){
+            shared_data[threadIdx.x] = end_sum = end_sum +
+              shared_data[threadIdx.x + pos];
+        }
+    }
+    if (threadIdx.x == 0){
+      sum[blockIdx.x] = end_sum;
+    }
+}
+
+template <typename T>
+__global__ void calculateTheta(T *d_gradient, T *d_theta, T factor, int theta_size){
+  int col = blockIdx.x * blockDim.x + threadIdx.x;
+  if (col < theta_size){
+    d_theta[col] = d_theta[col] - (factor * d_gradient[col]);
+  }
+}
+
+  template <typename T>
+  void GpuLogisticRegression<T>::GpuFit(const Matrix<T> &xin, const Vector<T> &y){
       Vector<T> gradient;
-      theta.resize(xin.cols() + 1);
-      gradient.resize(theta.rows());
-      theta.setZero();
+      theta_.resize(xin.cols() + 1);
+      gradient.resize(theta_.rows());
+      theta_.setZero();
       gradient.setZero();
 
-      Vector<T> bottom_theta;
       Matrix<T> xin_trans = xin.transpose();
       Vector<T> temp(xin.rows());
 
@@ -208,6 +261,8 @@ namespace Nice {
       CUDA_CALL(cudaMemcpy(d_xin_trans, h_xin_trans, xin_trans.size() * sizeof(T),
         cudaMemcpyHostToDevice));
 
+      T * d_theta;
+
       T * d_temp;
       CUDA_CALL(cudaMalloc(&d_temp, xin.rows() * sizeof(T)));
       CUDA_CALL(cudaMemset(d_temp, 0, xin.rows() * sizeof(T)));
@@ -217,64 +272,50 @@ namespace Nice {
       CUDA_CALL(cudaMemset(d_result, 0, xin.rows() * sizeof(T)));
 
       T * d_end;
-      CUDA_CALL(cudaMalloc(&d_end, xin.cols() * sizeof(T)));
-      CUDA_CALL(cudaMemset(d_end, 0, xin.cols() * sizeof(T)));
+      CUDA_CALL(cudaMalloc(&d_end, (xin.cols() + 1) * sizeof(T)));
+      CUDA_CALL(cudaMemset(d_end, 0, (xin.cols() + 1) * sizeof(T)));
 
-      T * d_bottom_theta;
+      dim3 dimBlock(block_size_);
+      dim3 dimGrid(std::ceil((T)xin.rows() / (block_size_)));
 
+      dim3 dimBlockTrans(block_size_);
+      dim3 dimGridTrans(std::ceil((T)(xin.cols() - 1) / (block_size_)));
 
-      for (int i = 0; i < iterations; i++) {
-        bottom_theta = theta.bottomRows(theta.rows() - 1);
-        CUDA_CALL(cudaMalloc(&d_bottom_theta, xin.cols() * sizeof(T)));
-        CUDA_CALL(cudaMemcpy(d_bottom_theta, &bottom_theta(0), xin.cols() * sizeof(T),
-          cudaMemcpyHostToDevice));
+      CUDA_CALL(cudaMalloc(&d_theta, theta_.size() * sizeof(T)));
+      CUDA_CALL(cudaMemcpy(d_theta, &theta_(0), theta_.size() * sizeof(T),
+        cudaMemcpyHostToDevice));
 
-        dim3 dimBlock(BLOCK_SIZE);
-        dim3 dimGrid(std::ceil((float)xin.rows() / (BLOCK_SIZE)));
-        CudaMVKernel<<<dimGrid, dimBlock>>>(d_xin, d_bottom_theta, d_result, xin.rows(), xin.cols());
-
-        preMultiply<<<dimGrid,dimBlock>>>(d_result, d_y, d_temp, theta(0));
-
-        CudaMVKernel<<<dimGrid, dimBlock>>>(d_xin_trans, d_temp, d_end, xin.cols(), xin.rows());
-
-        CUDA_CALL(cudaMemcpy(&h_end(0), d_end, xin.cols() * sizeof(T), cudaMemcpyDeviceToHost));
-
-        gradient.bottomRows(gradient.rows() - 1) = h_end;
-
-        gradient(0) = theta.sum();
-        theta = theta - ((alpha/ y.size()) * gradient);
+      for (int i = 0; i < iterations_; i++) {
+        CUDA_CALL(cudaDeviceSynchronize());
+        CudaGlobalKernel<<<dimGrid, dimBlock, block_size_ * sizeof(T)>>>(d_xin, d_theta + 1, d_result, xin.rows(), xin.cols());
+        CUDA_CALL(cudaDeviceSynchronize());
+        preMultiply<<<dimGrid,dimBlock>>>(d_result, d_y, d_temp, d_theta);
+        reduce<<< dimGrid, dimBlock, block_size_ * sizeof(T)>>>(d_theta, d_end, theta_.size());
+        CUDA_CALL(cudaDeviceSynchronize());
+        CudaGlobalKernel<<<dimGridTrans, dimBlockTrans, block_size_ * sizeof(T)>>>(d_xin_trans, d_temp, d_end + 1, xin.cols(), xin.rows());
+        CUDA_CALL(cudaDeviceSynchronize());
+        calculateTheta<<< dimGrid, dimBlock>>>(d_end, d_theta, alpha_/ y.size(), theta_.size());
       }
 
+      CUDA_CALL(cudaMemcpy(&theta_(0), d_theta, theta_.size() * sizeof(T), cudaMemcpyDeviceToHost));
+
       CUDA_CALL(cudaFree(d_xin));
-      CUDA_CALL(cudaFree(d_bottom_theta));
       CUDA_CALL(cudaFree(d_y));
-
-      // Predict
-      Vector<T> h_predictions(predict_inputs.rows());
-
-      Vector<T> yhat;
-      Matrix<T> product;
-      product = predict_inputs * theta.bottomRows(theta.rows()-1);
-      yhat = product.rowwise().sum();
-      yhat = yhat.array() + theta(0);
-      h_predictions = h(yhat);
-      h_predictions = h_predictions.unaryExpr(std::ptr_fun<T,T>(std::round));
-
-
-      return h_predictions;
+      CUDA_CALL(cudaFree(d_xin_trans));
+      CUDA_CALL(cudaFree(d_theta));
+      CUDA_CALL(cudaFree(d_temp));
+      CUDA_CALL(cudaFree(d_result));
+      CUDA_CALL(cudaFree(d_end));
   }
 
-
   template
-  Vector<float> GpuLogisticRegression<float>::GpuFitMV(const Matrix<float> &xin, const Vector<float> &y,
-      const Matrix<float> &predict_inputs, int iterations, float alpha);
+  void GpuLogisticRegression<float>::GpuFit(const Matrix<float> &xin, const Vector<float> &y);
 
   template
   Vector<float> GpuLogisticRegression<float>::GpuPredict(const Matrix<float> &inputs);
 
   template
-  Vector<double> GpuLogisticRegression<double>::GpuFitMV(const Matrix<double> &xin, const Vector<double> &y,
-      const Matrix<double> &predict_inputs, int iterations, double alpha);
+  void GpuLogisticRegression<double>::GpuFit(const Matrix<double> &xin, const Vector<double> &y);
 
   template
   Vector<double> GpuLogisticRegression<double>::GpuPredict(const Matrix<double> &inputs);

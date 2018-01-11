@@ -32,8 +32,10 @@ namespace Nice {
 template <typename T>
 class GpuLogisticRegression {
  private:
-  Vector<T> theta;
-  int BLOCK_SIZE;
+  Vector<T> theta_;
+  int block_size_;
+  T alpha_;
+  int iterations_;
   /// Calculates the hypothesis of a given input Vector
   ///
   /// \param input
@@ -46,31 +48,46 @@ class GpuLogisticRegression {
       return input.array().inverse();
     }
 
-    Vector<T> truncate(Vector<T> input) {
-      Vector<T> small = (input * 10000).unaryExpr(std::ptr_fun<T,T>(std::floor));
-      return (small / 10000);
-    }
-
  public:
-  GpuLogisticRegression() {BLOCK_SIZE = 1024;}
-  GpuLogisticRegression(int inBlock) {BLOCK_SIZE = inBlock;}
+  GpuLogisticRegression() {
+    block_size_ = 32;
+  }
+
+  GpuLogisticRegression(int in_block, int in_iterations, T in_alpha) {
+    block_size_ = in_block;
+    iterations_ = in_iterations;
+    alpha_ = in_alpha;
+  }
+
+  void SetAlpha(T in_alpha) {
+    alpha_ = in_alpha;
+  }
+
+  void SetIterations(int in_iterations) {
+    iterations_ = in_iterations;
+  }
+
+  T GetAlpha() {
+    return alpha_;
+  }
+
+  int GetIterations() {
+    return iterations_;
+  }
+
   /// Sets the theta for the model from an external Vector
   ///
   /// \param input
   /// A Vector containing the theta to manually set the model
-  void setTheta(const Vector<T> &input) {theta = input;}
+  void SetTheta(const Vector<T> &input) {theta_ = input;}
 
   /// Returns the current theta for the specific model
   ///
   /// \return
   /// A Vector containing the current theta values
-  Vector<T> getTheta() {return theta;}
+  Vector<T> GetTheta() {return theta_;}
 
-  void GpuFit(const Matrix<T> &xin, const Vector<T> &y,
-      int iterations, T alpha);
-
-  Vector<T> GpuFitMV(const Matrix<T> &xin, const Vector<T> &y,
-      const Matrix<T> &predict_inputs, int iterations, T alpha);
+  void GpuFit(const Matrix<T> &xin, const Vector<T> &y);
 
   Vector<T> GpuPredict(const Matrix<T> &inputs);
 };
