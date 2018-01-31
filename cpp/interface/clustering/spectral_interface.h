@@ -59,7 +59,7 @@ using VectorMap = Eigen::Map<Eigen::Matrix<T, Eigen::Dynamic,
 template<typename T>
 class SpectralInterface {
  public:
-  explicit SpectralInterface() {
+  SpectralInterface() {
     spectral_ = std::make_shared<Nice::SpectralClustering<T>>();
   }
 
@@ -94,6 +94,7 @@ class SpectralInterface {
     PyBuffer_Release(&input_buf);
     PyBuffer_Release(&l_buf);
   }
+
  protected:
   std::shared_ptr<Nice::SpectralClustering<T>> spectral_;
 };

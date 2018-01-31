@@ -60,7 +60,6 @@ class KMeansTest : public ::testing::Test {
       kmeans_ = nullptr;
 
     data_file_path_ = base_dir + file_name;
-    std::cout << "data_file_path: " << data_file_path_ << std::endl;
     data_ = Nice::util::FromFile<T>(data_file_path_, ",");
   }
 };
@@ -70,7 +69,7 @@ typedef ::testing::Types<float> FloatTypes;
 TYPED_TEST_CASE(KMeansTest, FloatTypes);
 
 
-//TYPED_TEST(KMeansTest, CPU5_10_3) {
+TYPED_TEST(KMeansTest, CPU5_10_3) {
 //  std::string base_dir = "../test/data_for_test/";
 //  // std::string file_name = "clustering_k5_10_d3.txt";
 //  // std::string file_name = "data_k50_p10000_d100_c1.txt";
@@ -80,4 +79,4 @@ TYPED_TEST_CASE(KMeansTest, FloatTypes);
 //  this->kmeans_->Fit(this->data_, this->k_);
 //  this->labels_ = this->kmeans_->GetLabels();
 //  // std::cout << this->labels_ << std::endl;
-//}
+}
